@@ -165,7 +165,7 @@ def plotPSpectra(INPUT_PATH, OUTPUT_DEST, my_list, start_time, gas = False):
     gas: boolean whether we are plotting gas or DM projected densities
     Returns:
     -------------
-    1 plot containing all DM / gas spectra"""
+    1 plot containing all spectra"""
 
     if rank == 0:
         plt.figure()
@@ -183,7 +183,7 @@ def plotPSpectra(INPUT_PATH, OUTPUT_DEST, my_list, start_time, gas = False):
         L_BOX = float(res[-2])
         delx = L_BOX/N
         
-        # Creating Catalog (the catalog module is a bit buggy but we trust that all particles are included given that csize is correct)
+        # Creating Catalog
         in_cat = HDFCatalog('{0}/{1}/snapdir_000/snap_'.format(INPUT_PATH, simCase)+'*', dataset='PartType{0}'.format(part_type))
         print_status(rank, start_time, 'In our nbodykit cat we have columns {0} and {1} {2} particles'.format(in_cat.columns, in_cat.csize, suffix))
         
@@ -192,34 +192,38 @@ def plotPSpectra(INPUT_PATH, OUTPUT_DEST, my_list, start_time, gas = False):
 
         # Create mesh for density grid
         print_status(rank,start_time,'Painting onto a CIC grid...')
-        if gas == False: # DM masses are always the same for CDM, WDM
+        if gas == False:
             in_mesh = in_cat.to_mesh(Nmesh=N, BoxSize=L_BOX, resampler='cic',compensated=True, position='Coordinates')
         else: # Allowing for snap not 0 where baryon masses will start to differ
             in_mesh = in_cat.to_mesh(Nmesh=N, BoxSize=L_BOX, resampler='cic',compensated=True, position='Coordinates', weight='Masses')
         
         # Set binning parameters
-        k_ny = 2*np.pi/delx/2 # Nyquist frequency
-        k_f = 2*np.pi/L_BOX # Fundamenta frequency of the box
-        dk = (k_ny - k_f)/300 # Feel free to change 300
+        k_ny = 2*np.pi/delx/2
+        k_f = 2*np.pi/L_BOX
+        dk = (k_ny - k_f)/300
 
         # Measure power spectrum using nbodykit's built-in routines
         print_status(rank,start_time,'Call FFTPower')
         r = nbk.FFTPower(in_mesh, mode='1d', kmin = k_f, dk = dk)
         Pk = r.power
         print_status(rank,start_time,'Succeeded.')
+        # Saving power spectrum
+        np.savetxt("txt_files/{0}_psp.txt".format(simCase), Pk['power'].real, fmt='%1.7e')
+        np.savetxt("txt_files/{0}_k.txt".format(simCase), Pk['k'], fmt='%1.7e')
         if rank == 0:
-            plt.loglog(Pk['k'], Pk['power'].real, color = colors[ind], label="{0}".format(simCase))
-            plt.axvline(x=k_ny, color = colors[ind], alpha = 0.5) # In case multiple k_ny overlap, alpha = 0.5 helps.
-            plt.axvline(x=k_f, color = colors[ind], linestyle='--', alpha = 0.5)
-            plt.legend(fontsize="small")
+            plt.loglog(Pk['k'], Pk['power'].real, color = colors[ind], label="{0}, {1}".format(simCase, suffix))
+            plt.axvline(x=k_ny, color = colors[ind])
+            plt.axvline(x=k_f, color = colors[ind], linestyle='--')
+    
+    if rank == 0:
+        plt.legend(fontsize="x-small")
+        plt.ylabel(r"$P(k)$ [$h^{-3}\mathrm{Mpc}^3$]")
+        plt.xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
+        plt.savefig("{0}/pspectra{1}.pdf".format(OUTPUT_DEST, suffix), bbox_inches='tight')
 
-    plt.ylabel(r"$P(k)$ [$h^{-3}\mathrm{Mpc}^3$]")
-    plt.xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
-    plt.savefig("{0}/pspectra{1}.pdf".format(OUTPUT_DEST, suffix), bbox_inches='tight')
-
-OUTPUT_DEST = '/home/td448/Projects/consistency_checks/get_pspectra/out'
+OUTPUT_DEST = '/home/td448/Projects/consistency_checks/get_pspectra/1z/out'
 INPUT_PATH = '/data/highz4/AFdata4/AF_WDM_LS_2021'
-res = re.split('(\d+)', my_list[0]) # First list entry decides whether gas will be investigated too. So better all be "NoGas" or "Gas".
+res = re.split('(\d+)', my_list[0])
 if res[4] == "NoGas":
     gas = False
 else:
